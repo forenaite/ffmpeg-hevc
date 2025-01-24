@@ -1,0 +1,107 @@
+#!/bin/bash
+
+# Shell Script to re-encode videos using FFMPEG and NVENC in high quality mode.
+# Works best with 2160p videos.
+# Requires NVIDIA GPU.
+
+command -v ffmpeg > /dev/null 2>&1 || { echo "FFmpeg not found"; exit 1; }
+
+function usage {
+    echo "Usage: $0 [-b] <directory|input-file> <file-extension|bitrate>"
+    echo "Example 1 (single file): $0 input.mp4 8192k"
+    echo "Example 2 (batch  mode): $0 -b /path/to/files mp4 8192k"
+    exit 1
+}
+
+if [ "$1" == "-b" ]; then
+    batch_mode=true
+    shift
+else
+    batch_mode=false
+fi
+
+if [ "$batch_mode" == true ]; then
+    if [ $# -ne 3 ]; then
+        usage
+    fi
+    directory=$1
+    extension=$2
+    bitrate=$3
+
+    if [ ! -d "$directory" ]; then
+        echo "Error: Directory '$directory' not found."
+        exit 1
+    fi
+
+    echo "Looking for files with extension '.$extension' in directory '$directory'."
+    files=("$directory"/*."$extension")
+
+    if [ ${#files[@]} -eq 0 ]; then
+        echo "No files with extension '$extension' found in directory '$directory'."
+        exit 1
+    fi
+
+    for input_file in "${files[@]}"; do
+        output_file="${input_file%.*}_nvenc.mkv"
+
+        if [ ! -f "$input_file" ]; then
+            echo "Error: Input file '$input_file' not found."
+            continue
+        fi
+
+        echo "Starting encoding for: \"$input_file\""
+
+        $(command -v ffmpeg) -v warning -stats -i "$input_file" \
+            -c:v hevc_nvenc \
+            -preset p7 \
+            -tune hq \
+            -profile:v main10 \
+            -pix_fmt p010le \
+            -2pass true \
+            -b:v "$bitrate" \
+            -c:a copy \
+            -c:s copy \
+            -y "$output_file"
+
+        if [ $? -ne 0 ]; then
+            echo "Encoding error for $input_file."
+            continue
+        fi
+
+        echo "Encoding completed! Processed: \"$input_file\" -> \"$output_file\""
+    done
+else
+    if [ $# -ne 2 ]; then
+        usage
+    fi
+
+    input_file=$1
+    bitrate=$2
+    output_file="${input_file%.*}_nvenc.mkv"
+
+    if [ ! -f "$input_file" ]; then
+        echo "Error: Input file '$input_file' not found."
+        exit 1
+    fi
+
+    echo "Starting encoding for: \"$input_file\""
+
+    $(command -v ffmpeg) -v warning -stats -i "$input_file" \
+        -c:v hevc_nvenc \
+        -preset p7 \
+        -tune hq \
+        -profile:v main10 \
+        -pix_fmt p010le \
+        -2pass true \
+        -b:v "$bitrate" \
+        -c:a copy \
+        -c:s copy \
+        -y "$output_file"
+
+    if [ $? -ne 0 ]; then
+        echo "Encoding error."
+        exit 1
+    fi
+
+    echo "Encoding completed! Processed: \"$input_file\" -> \"$output_file\""
+fi
